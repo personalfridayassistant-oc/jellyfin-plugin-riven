@@ -33,7 +33,24 @@
                             <input id="RivenEnableWebActions" type="checkbox" is="emby-checkbox" />
                             <span>Serve web action script</span>
                         </label>
-                        <div class="fieldDescription">Jellyfin plugins cannot officially inject controls into every item page. Enable this and load <code>/Riven/Web/riven.js</code> with a web customisation or JavaScript injector plugin to add compact Riven actions to item pages.</div>
+                        <div class="fieldDescription">Adds a compact Riven action menu to supported movie, episode, season, and series pages.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="RivenDefaultQualityOverride">Default Quality Override</label>
+                        <input id="RivenDefaultQualityOverride" type="text" is="emby-input" autocomplete="off" />
+                        <div class="fieldDescription">Optional fallback sent to Riven retry calls when no per-action override is entered, for example <code>1080p</code>, <code>2160p</code>, or <code>remux</code>. Riven currently has no discoverable profile API, so this remains a manual value.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="RivenDefaultProfileOverride">Default Profile Override</label>
+                        <input id="RivenDefaultProfileOverride" type="text" is="emby-input" autocomplete="off" />
+                        <div class="fieldDescription">Optional fallback profile name/id sent to Riven retry calls if your Riven build supports profile overrides.</div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="RivenRefreshLibraryOnComplete" type="checkbox" is="emby-checkbox" />
+                            <span>Refresh Jellyfin library after Riven completion</span>
+                        </label>
+                        <div class="fieldDescription">Triggers a Jellyfin library scan after retry, delete-and-retry, or manual stream selection completes.</div>
                     </div>
                     <div>
                         <button is="emby-button" type="submit" class="raised button-submit block emby-button">
@@ -56,6 +73,9 @@
                     document.querySelector('#RivenApiKey').value = config.ApiKey || '';
                     document.querySelector('#RivenUseHttps').checked = config.UseHttps || false;
                     document.querySelector('#RivenEnableWebActions').checked = config.EnableWebActions !== false;
+                    document.querySelector('#RivenDefaultQualityOverride').value = config.DefaultQualityOverride || '';
+                    document.querySelector('#RivenDefaultProfileOverride').value = config.DefaultProfileOverride || '';
+                    document.querySelector('#RivenRefreshLibraryOnComplete').checked = config.RefreshLibraryOnComplete || false;
                     Dashboard.hideLoadingMsg();
                 });
             });
@@ -68,6 +88,9 @@
                     config.ApiKey = document.querySelector('#RivenApiKey').value.trim();
                     config.UseHttps = document.querySelector('#RivenUseHttps').checked;
                     config.EnableWebActions = document.querySelector('#RivenEnableWebActions').checked;
+                    config.DefaultQualityOverride = document.querySelector('#RivenDefaultQualityOverride').value.trim();
+                    config.DefaultProfileOverride = document.querySelector('#RivenDefaultProfileOverride').value.trim();
+                    config.RefreshLibraryOnComplete = document.querySelector('#RivenRefreshLibraryOnComplete').checked;
                     ApiClient.updatePluginConfiguration(RivenConfig.pluginUniqueId, config).then(function (result) {
                         Dashboard.processPluginConfigurationUpdateResult(result);
                     });

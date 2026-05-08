@@ -14,9 +14,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Jellyfin.Plugin.Riven.Controllers;
 
-/// <summary>
-/// API endpoints used by the Riven web actions.
-/// </summary>
 [ApiController]
 [Route("Riven")]
 [Produces(MediaTypeNames.Application.Json)]
@@ -26,18 +23,12 @@ public sealed class RivenController : ControllerBase
     private readonly ILibraryManager _libraryManager;
     private readonly RivenClient _rivenClient;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="RivenController"/> class.
-    /// </summary>
     public RivenController(ILibraryManager libraryManager)
     {
         _libraryManager = libraryManager;
         _rivenClient = new RivenClient(SharedHttpClient);
     }
 
-    /// <summary>
-    /// Serves the optional web action script.
-    /// </summary>
     [HttpGet("Web/riven.js")]
     [AllowAnonymous]
     [Produces("application/javascript")]
@@ -60,23 +51,27 @@ public sealed class RivenController : ControllerBase
         return Content(reader.ReadToEnd(), "application/javascript");
     }
 
-    /// <summary>
-    /// Retries the matching Riven item.
-    /// </summary>
     [HttpPost("Retry")]
     [Authorize(Policy = Policies.RequiresElevation)]
     public async Task<ActionResult<RivenActionResponse>> Retry([FromBody] RivenItemActionRequest request, CancellationToken cancellationToken)
     {
         return await ExecuteResolvedActionAsync(request.ItemId, async item =>
         {
-            var message = await _rivenClient.RetryAsync(item.Id, cancellationToken).ConfigureAwait(false);
+            var config = Plugin.Instance?.Configuration;
+            var qualityOverride = request.QualityOverride ?? config?.DefaultQualityOverride;
+            var profileOverride = request.ProfileOverride ?? config?.DefaultProfileOverride;
+
+            var message = await _rivenClient.RetryAsync(item.Id, qualityOverride, profileOverride, cancellationToken).ConfigureAwait(false);
+
+            if (config?.RefreshLibraryOnComplete == true)
+            {
+                await TriggerLibraryRefreshAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             return new RivenActionResponse { Success = true, Message = message, RivenItemId = item.Id };
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Deletes a movie or episode in Riven and triggers a retry so it can be reacquired.
-    /// </summary>
     [HttpPost("DeleteAndRetry")]
     [Authorize(Policy = Policies.RequiresElevation)]
     public async Task<ActionResult<RivenActionResponse>> DeleteAndRetry([FromBody] RivenItemActionRequest request, CancellationToken cancellationToken)
@@ -89,34 +84,122 @@ public sealed class RivenController : ControllerBase
 
         return await ExecuteResolvedActionAsync(request.ItemId, async item =>
         {
-            var message = await _rivenClient.DeleteAndRetryAsync(item.Id, cancellationToken).ConfigureAwait(false);
+            var config = Plugin.Instance?.Configuration;
+            var qualityOverride = request.QualityOverride ?? config?.DefaultQualityOverride;
+            var profileOverride = request.ProfileOverride ?? config?.DefaultProfileOverride;
+
+            var message = await _rivenClient.DeleteAndRetryAsync(item.Id, qualityOverride, profileOverride, cancellationToken).ConfigureAwait(false);
+
+            if (config?.RefreshLibraryOnComplete == true)
+            {
+                await TriggerLibraryRefreshAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             return new RivenActionResponse { Success = true, Message = message, RivenItemId = item.Id };
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Submits a magnet link for a movie item through Riven's manual scrape flow.
-    /// </summary>
     [HttpPost("SubmitMagnet")]
     [Authorize(Policy = Policies.RequiresElevation)]
-    public async Task<ActionResult<RivenActionResponse>> SubmitMagnet([FromBody] ManualMagnetRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<RivenScrapeStartResponse>> SubmitMagnet([FromBody] ManualMagnetRequest request, CancellationToken cancellationToken)
     {
         var jellyfinItem = _libraryManager.GetItemById(request.ItemId);
         if (jellyfinItem is not Movie)
         {
-            return BadRequest(new RivenActionResponse { Success = false, Message = "Manual magnet submission currently supports movies. TV episode mapping can be added next." });
+            return BadRequest(new RivenActionResponse { Success = false, Message = "Manual magnet submission currently supports movies." });
         }
 
         return await ExecuteResolvedActionAsync(request.ItemId, async item =>
         {
-            var message = await _rivenClient.SubmitMovieMagnetAsync(item.Id, request.Magnet, cancellationToken).ConfigureAwait(false);
-            return new RivenActionResponse { Success = true, Message = message, RivenItemId = item.Id };
+            var result = await _rivenClient.StartMagnetSessionAsync(item.Id, request.Magnet, "movie", cancellationToken).ConfigureAwait(false);
+            if (result.SessionId is null || (result.Containers?.Files.Count ?? 0) == 0)
+            {
+                throw new InvalidOperationException("Riven did not return any available streams for the provided magnet link.");
+            }
+
+            return result;
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<ActionResult<RivenActionResponse>> ExecuteResolvedActionAsync(
+    [HttpPost("SubmitTvMagnet")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public async Task<ActionResult<RivenScrapeStartResponse>> SubmitTvMagnet([FromBody] ManualMagnetRequest request, CancellationToken cancellationToken)
+    {
+        var jellyfinItem = _libraryManager.GetItemById(request.ItemId);
+        if (jellyfinItem is not Series)
+        {
+            return BadRequest(new RivenActionResponse { Success = false, Message = "TV magnet submission is only available on the main series page, not seasons or episodes." });
+        }
+
+        return await ExecuteResolvedActionAsync(request.ItemId, async item =>
+        {
+            var result = await _rivenClient.StartMagnetSessionAsync(item.Id, request.Magnet, "tv", cancellationToken).ConfigureAwait(false);
+
+            if (result.SessionId is null || (result.Containers?.Files.Count ?? 0) == 0)
+            {
+                throw new InvalidOperationException("Riven did not return any available streams for the provided magnet link.");
+            }
+
+            return result;
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    [HttpPost("SelectStream")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public async Task<ActionResult<RivenActionResponse>> SelectStream([FromBody] SelectStreamRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.SessionId) || string.IsNullOrWhiteSpace(request.FileId))
+        {
+            return BadRequest(new RivenActionResponse { Success = false, Message = "Session ID and File ID are required." });
+        }
+
+        try
+        {
+            var file = new RivenFileOption
+            {
+                FileId = int.Parse(request.FileId, CultureInfo.InvariantCulture),
+                Filename = request.Filename,
+                Filesize = request.Filesize
+            };
+            await _rivenClient.SelectFileAsync(request.SessionId, file, cancellationToken).ConfigureAwait(false);
+            await _rivenClient.CompleteSessionAsync(request.SessionId, cancellationToken).ConfigureAwait(false);
+
+            if (Plugin.Instance?.Configuration.RefreshLibraryOnComplete == true)
+            {
+                await TriggerLibraryRefreshAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            return Ok(new RivenActionResponse { Success = true, Message = "Stream selected and session completed.", RivenItemId = request.SessionId });
+        }
+        catch (Exception ex) when (ex is FormatException or InvalidOperationException or JsonException)
+        {
+            return BadRequest(new RivenActionResponse { Success = false, Message = ex.Message });
+        }
+    }
+
+    [HttpPost("RefreshLibrary")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public async Task<ActionResult<RivenActionResponse>> RefreshLibrary(CancellationToken cancellationToken)
+    {
+        await TriggerLibraryRefreshAsync(cancellationToken).ConfigureAwait(false);
+        return Ok(new RivenActionResponse { Success = true, Message = "Jellyfin library refresh has been triggered." });
+    }
+
+    private async Task TriggerLibraryRefreshAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _libraryManager.ValidateMediaLibrary(new Progress<double>(), cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Riven] Library refresh failed: {ex.Message}");
+        }
+    }
+
+    private async Task<ActionResult<TResponse>> ExecuteResolvedActionAsync<TResponse>(
         Guid jellyfinItemId,
-        Func<RivenItem, Task<RivenActionResponse>> action,
+        Func<RivenItem, Task<TResponse>> action,
         CancellationToken cancellationToken)
     {
         try
@@ -190,4 +273,13 @@ public sealed class RivenController : ControllerBase
     {
         return item.ProviderIds.TryGetValue(provider, out var value) ? value : null;
     }
+}
+
+public sealed class SelectStreamRequest
+{
+    public string SessionId { get; set; } = string.Empty;
+    public string FileId { get; set; } = string.Empty;
+    public string? Filename { get; set; }
+    public long Filesize { get; set; }
+    public Guid ItemId { get; set; }
 }

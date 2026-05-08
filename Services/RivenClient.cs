@@ -5,25 +5,16 @@ using Jellyfin.Plugin.Riven.Models;
 
 namespace Jellyfin.Plugin.Riven.Services;
 
-/// <summary>
-/// Client for Riven API calls used by the plugin.
-/// </summary>
 public sealed class RivenClient
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly HttpClient _httpClient;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="RivenClient"/> class.
-    /// </summary>
     public RivenClient(HttpClient httpClient)
     {
         _httpClient = httpClient;
     }
 
-    /// <summary>
-    /// Resolves a Riven item id from external metadata ids.
-    /// </summary>
     public async Task<RivenItem?> ResolveItemAsync(RivenLookup lookup, CancellationToken cancellationToken)
     {
         var config = GetConfig();
@@ -31,7 +22,7 @@ public sealed class RivenClient
 
         var mediaType = lookup.MediaType;
         var searches = new[] { lookup.TmdbId, lookup.TvdbId, lookup.ImdbId, lookup.Title }
-            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Where(v => !string.IsNullOrWhiteSpace(v))
             .Distinct(StringComparer.OrdinalIgnoreCase);
 
         foreach (var search in searches)
@@ -55,25 +46,54 @@ public sealed class RivenClient
         return null;
     }
 
-    /// <summary>
-    /// Retries a Riven item.
-    /// </summary>
-    public async Task<string> RetryAsync(string rivenItemId, CancellationToken cancellationToken)
+    public async Task<string> RetryAsync(string rivenItemId, string? qualityOverride, string? profileOverride, CancellationToken cancellationToken)
     {
         var config = GetConfig();
         EnsureConfigured(config);
-        var uri = BuildUri(config, "/api/v1/items/retry", new Dictionary<string, string?> { ["api_key"] = config.ApiKey });
-        var response = await _httpClient.PostAsJsonAsync(uri, new { ids = new[] { rivenItemId } }, JsonOptions, cancellationToken).ConfigureAwait(false);
+
+        var query = new Dictionary<string, string?> { ["api_key"] = config.ApiKey };
+        if (!string.IsNullOrWhiteSpace(qualityOverride))
+        {
+            query["quality"] = qualityOverride;
+        }
+
+        if (!string.IsNullOrWhiteSpace(profileOverride))
+        {
+            query["profile"] = profileOverride;
+        }
+
+        var uri = BuildUri(config, "/api/v1/items/retry", query);
+        using var request = new HttpRequestMessage(HttpMethod.Post, uri);
+
+        if (!string.IsNullOrWhiteSpace(qualityOverride) || !string.IsNullOrWhiteSpace(profileOverride))
+        {
+            var body = new Dictionary<string, object?> { ["ids"] = new[] { rivenItemId } };
+            if (!string.IsNullOrWhiteSpace(qualityOverride))
+            {
+                body["quality"] = qualityOverride;
+            }
+
+            if (!string.IsNullOrWhiteSpace(profileOverride))
+            {
+                body["profile"] = profileOverride;
+            }
+
+            request.Content = JsonContent.Create(body, options: JsonOptions);
+        }
+        else
+        {
+            request.Content = JsonContent.Create(new { ids = new[] { rivenItemId } }, options: JsonOptions);
+        }
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         return await ReadRivenMessageAsync(response, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Deletes a Riven item and then retries it.
-    /// </summary>
-    public async Task<string> DeleteAndRetryAsync(string rivenItemId, CancellationToken cancellationToken)
+    public async Task<string> DeleteAndRetryAsync(string rivenItemId, string? qualityOverride, string? profileOverride, CancellationToken cancellationToken)
     {
         var config = GetConfig();
         EnsureConfigured(config);
+
         var removeUri = BuildUri(config, "/api/v1/items/remove", new Dictionary<string, string?> { ["api_key"] = config.ApiKey });
         var removeRequest = new HttpRequestMessage(HttpMethod.Delete, removeUri)
         {
@@ -82,13 +102,11 @@ public sealed class RivenClient
 
         using var removeResponse = await _httpClient.SendAsync(removeRequest, cancellationToken).ConfigureAwait(false);
         var removeMessage = await ReadRivenMessageAsync(removeResponse, cancellationToken).ConfigureAwait(false);
-        var retryMessage = await RetryAsync(rivenItemId, cancellationToken).ConfigureAwait(false);
+
+        var retryMessage = await RetryAsync(rivenItemId, qualityOverride, profileOverride, cancellationToken).ConfigureAwait(false);
         return $"{removeMessage}; {retryMessage}";
     }
 
-    /// <summary>
-    /// Submits a magnet link for an existing movie item.
-    /// </summary>
     public async Task<string> SubmitMovieMagnetAsync(string rivenItemId, string magnet, CancellationToken cancellationToken)
     {
         var config = GetConfig();
@@ -109,7 +127,13 @@ public sealed class RivenClient
         using var startResponse = await _httpClient.PostAsync(startUri, null, cancellationToken).ConfigureAwait(false);
         using var startDoc = await ReadJsonDocumentAsync(startResponse, cancellationToken).ConfigureAwait(false);
         var root = startDoc.RootElement;
-        var sessionId = root.GetProperty("session_id").GetString();
+
+        if (!root.TryGetProperty("session_id", out _) || !root.TryGetProperty("containers", out _))
+        {
+            throw new InvalidOperationException("Riven did not return a valid session for magnet submission.");
+        }
+
+        var sessionId = root.GetProperty("session_id").GetString()!;
         var files = root.GetProperty("containers").GetProperty("files");
         var firstFile = files.EnumerateArray().FirstOrDefault();
 
@@ -123,7 +147,7 @@ public sealed class RivenClient
             ["file_id"] = firstFile.GetProperty("file_id").GetInt32(),
             ["filename"] = firstFile.GetProperty("filename").GetString(),
             ["filesize"] = firstFile.GetProperty("filesize").GetInt64(),
-            ["download_url"] = firstFile.TryGetProperty("download_url", out var downloadUrl) ? downloadUrl.GetString() : null
+            ["download_url"] = firstFile.TryGetProperty("download_url", out var du) ? du.GetString() : null
         };
 
         var selectUri = BuildUri(config, $"/api/v1/scrape/select_files/{Uri.EscapeDataString(sessionId)}", new Dictionary<string, string?> { ["api_key"] = config.ApiKey });
@@ -137,6 +161,61 @@ public sealed class RivenClient
         var completeUri = BuildUri(config, $"/api/v1/scrape/complete_session/{Uri.EscapeDataString(sessionId)}", new Dictionary<string, string?> { ["api_key"] = config.ApiKey });
         using var completeResponse = await _httpClient.PostAsync(completeUri, null, cancellationToken).ConfigureAwait(false);
         return await ReadRivenMessageAsync(completeResponse, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<RivenScrapeStartResponse> StartMagnetSessionAsync(string rivenItemId, string magnet, string mediaType, CancellationToken cancellationToken)
+    {
+        var config = GetConfig();
+        EnsureConfigured(config);
+        if (string.IsNullOrWhiteSpace(magnet) || !magnet.StartsWith("magnet:?", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("A valid magnet link is required.");
+        }
+
+        var uri = BuildUri(config, "/api/v1/scrape/start_session", new Dictionary<string, string?>
+        {
+            ["magnet"] = magnet,
+            ["item_id"] = rivenItemId,
+            ["media_type"] = mediaType,
+            ["api_key"] = config.ApiKey
+        });
+
+        using var response = await _httpClient.PostAsync(uri, null, cancellationToken).ConfigureAwait(false);
+        var text = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"Riven returned {(int)response.StatusCode}: {text}");
+        }
+
+        return JsonSerializer.Deserialize<RivenScrapeStartResponse>(text, JsonOptions)
+            ?? throw new InvalidOperationException("Riven returned an empty session response.");
+    }
+
+    public async Task<string> SelectFileAsync(string sessionId, RivenFileOption file, CancellationToken cancellationToken)
+    {
+        var config = GetConfig();
+        var uri = BuildUri(config, $"/api/v1/scrape/select_files/{Uri.EscapeDataString(sessionId)}", new Dictionary<string, string?> { ["api_key"] = config.ApiKey });
+        var fileData = new Dictionary<string, object?>
+        {
+            ["file_id"] = file.FileId,
+            ["filename"] = file.Filename,
+            ["filesize"] = file.Filesize
+        };
+        using var selectResponse = await _httpClient.PostAsJsonAsync(uri, new Dictionary<string, object?> { [file.FileId.ToString()] = fileData }, JsonOptions, cancellationToken).ConfigureAwait(false);
+        var message = await ReadRivenMessageAsync(selectResponse, cancellationToken).ConfigureAwait(false);
+
+        var updateUri = BuildUri(config, $"/api/v1/scrape/update_attributes/{Uri.EscapeDataString(sessionId)}", new Dictionary<string, string?> { ["api_key"] = config.ApiKey });
+        using var updateResponse = await _httpClient.PostAsJsonAsync(updateUri, fileData, JsonOptions, cancellationToken).ConfigureAwait(false);
+        await ReadRivenMessageAsync(updateResponse, cancellationToken).ConfigureAwait(false);
+        return message;
+    }
+
+    public async Task<string> CompleteSessionAsync(string sessionId, CancellationToken cancellationToken)
+    {
+        var config = GetConfig();
+        var uri = BuildUri(config, $"/api/v1/scrape/complete_session/{Uri.EscapeDataString(sessionId)}", new Dictionary<string, string?> { ["api_key"] = config.ApiKey });
+        using var response = await _httpClient.PostAsync(uri, null, cancellationToken).ConfigureAwait(false);
+        return await ReadRivenMessageAsync(response, cancellationToken).ConfigureAwait(false);
     }
 
     private static PluginConfiguration GetConfig()
@@ -156,8 +235,8 @@ public sealed class RivenClient
     {
         var builder = new UriBuilder(config.GetBaseUrl()) { Path = path.TrimStart('/') };
         var pairs = query
-            .Where(pair => !string.IsNullOrWhiteSpace(pair.Value))
-            .Select(pair => $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value!)}");
+            .Where(p => !string.IsNullOrWhiteSpace(p.Value))
+            .Select(p => $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value!)}");
         builder.Query = string.Join('&', pairs);
         return builder.Uri;
     }
@@ -199,7 +278,7 @@ public sealed class RivenClient
         }
 
         using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(text) ? "{}" : text);
-        return document.RootElement.TryGetProperty("message", out var message) ? message.GetString() ?? text : text;
+        return document.RootElement.TryGetProperty("message", out var msg) ? msg.GetString() ?? text : text;
     }
 
     private static async Task<JsonDocument> ReadJsonDocumentAsync(HttpResponseMessage response, CancellationToken cancellationToken)
@@ -214,43 +293,13 @@ public sealed class RivenClient
     }
 }
 
-/// <summary>
-/// Metadata used to resolve a Riven item from a Jellyfin item.
-/// </summary>
 public sealed class RivenLookup
 {
-    /// <summary>
-    /// Gets or sets the Riven media type.
-    /// </summary>
     public string MediaType { get; set; } = "movie";
-
-    /// <summary>
-    /// Gets or sets the display title.
-    /// </summary>
     public string? Title { get; set; }
-
-    /// <summary>
-    /// Gets or sets the IMDb id.
-    /// </summary>
     public string? ImdbId { get; set; }
-
-    /// <summary>
-    /// Gets or sets the TMDB id.
-    /// </summary>
     public string? TmdbId { get; set; }
-
-    /// <summary>
-    /// Gets or sets the TVDB id.
-    /// </summary>
     public string? TvdbId { get; set; }
-
-    /// <summary>
-    /// Gets or sets the season number.
-    /// </summary>
     public int? SeasonNumber { get; set; }
-
-    /// <summary>
-    /// Gets or sets the episode number.
-    /// </summary>
     public int? EpisodeNumber { get; set; }
 }
