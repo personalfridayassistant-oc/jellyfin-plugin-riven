@@ -2,6 +2,13 @@
     'use strict';
 
     const supportedTypes = new Set(['Movie', 'Episode', 'Season', 'Series']);
+    const logPrefix = '[Riven Plugin]';
+
+    function log(message, value) {
+        if (window.console && console.debug) {
+            console.debug(logPrefix + ' ' + message, value || '');
+        }
+    }
 
     function getItemId() {
         const hash = window.location.hash || '';
@@ -69,16 +76,22 @@
     function makeButton(label, title, onClick) {
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = 'detailButton emby-button rivenActionButton';
+        button.className = 'raised emby-button rivenActionButton';
         button.title = title;
         button.style.marginInlineEnd = '.5em';
-        button.innerHTML = '<span class="material-icons" aria-hidden="true">cloud_sync</span><span class="button-text">' + label + '</span>';
+        button.style.marginBottom = '.5em';
+        button.style.display = 'inline-flex';
+        button.style.alignItems = 'center';
+        button.style.gap = '.35em';
+        button.style.padding = '.55em .9em';
+        button.innerHTML = '<span aria-hidden="true">R</span><span>' + label + '</span>';
         button.addEventListener('click', onClick);
         return button;
     }
 
     function addActions(item) {
         if (!item || !supportedTypes.has(item.Type) || document.querySelector('.rivenActionBar')) {
+            log('Skipping action render', item);
             return;
         }
 
@@ -90,6 +103,7 @@
         const itemId = item.Id;
         const bar = document.createElement('div');
         bar.className = 'rivenActionBar';
+        bar.setAttribute('data-riven-item-id', itemId);
         bar.style.display = 'inline-flex';
         bar.style.gap = '.35em';
         bar.style.alignItems = 'center';
@@ -137,19 +151,58 @@
         }
 
         host.appendChild(bar);
+        log('Rendered actions for item', item);
+    }
+
+    function getCurrentUserId() {
+        if (!window.ApiClient) {
+            return Promise.resolve(null);
+        }
+
+        if (ApiClient.getCurrentUserId) {
+            try {
+                return Promise.resolve(ApiClient.getCurrentUserId());
+            } catch (error) {
+                log('getCurrentUserId failed', error);
+            }
+        }
+
+        if (ApiClient._serverInfo && ApiClient._serverInfo.UserId) {
+            return Promise.resolve(ApiClient._serverInfo.UserId);
+        }
+
+        try {
+            const stored = JSON.parse(localStorage.getItem('jellyfin_credentials') || '{}');
+            const server = stored.Servers && stored.Servers[0];
+            return Promise.resolve(server && server.UserId ? server.UserId : null);
+        } catch (error) {
+            log('Stored user lookup failed', error);
+            return Promise.resolve(null);
+        }
+    }
+
+    function getItem(itemId) {
+        return getCurrentUserId().then(function (userId) {
+            if (userId && ApiClient.getItem) {
+                return ApiClient.getItem(userId, itemId);
+            }
+
+            if (ApiClient.ajax && ApiClient.getUrl) {
+                return ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('Items/' + itemId) });
+            }
+
+            throw new Error('Jellyfin ApiClient is unavailable.');
+        });
     }
 
     function refresh() {
         const itemId = getItemId();
         if (!itemId || !window.ApiClient || !ApiClient.getItem) {
+            log('No item id or ApiClient yet', { itemId: itemId, hasApiClient: !!window.ApiClient });
             return;
         }
 
-        const itemPromise = ApiClient.getCurrentUserId
-            ? ApiClient.getCurrentUserId().then(function (userId) { return ApiClient.getItem(userId, itemId); })
-            : ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('Items/' + itemId) });
-
-        itemPromise.then(addActions).catch(function () { });
+        getItem(itemId).then(addActions).catch(function (error) { log('Failed to load item', error); });
     }
 
     let lastHref = '';
@@ -162,5 +215,7 @@
 
     document.addEventListener('viewshow', function () { setTimeout(refresh, 600); });
     document.addEventListener('pageshow', function () { setTimeout(refresh, 600); });
+    document.addEventListener('visibilitychange', function () { setTimeout(refresh, 600); });
     setTimeout(refresh, 1000);
+    setTimeout(refresh, 2500);
 }());
