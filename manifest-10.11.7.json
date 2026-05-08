@@ -12,7 +12,7 @@
         "changelog": "Improve Jellyfin Web item detection and Riven action rendering.",
         "targetAbi": "10.11.7.0",
         "sourceUrl": "https://github.com/personalfridayassistant-oc/jellyfin-plugin-riven/releases/download/v0.1.4.0/Jellyfin.Plugin.Riven_0.1.4.0.zip",
-        "checksum": "PENDING",
+        "checksum": "6C7F4BCE5888022E1C29993115F60F21",
         "timestamp": "2026-05-08T00:00:00Z"
       }
     ]
