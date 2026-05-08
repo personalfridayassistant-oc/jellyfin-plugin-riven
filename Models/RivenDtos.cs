@@ -129,8 +129,17 @@ public sealed class RivenScrapeStartResponse
     [JsonPropertyName("session_id")]
     public string? SessionId { get; set; }
 
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+
     [JsonPropertyName("containers")]
     public RivenContainers? Containers { get; set; }
+
+    [JsonPropertyName("files")]
+    public List<RivenFileOption> Files { get; set; } = [];
+
+    [JsonPropertyName("selected_files")]
+    public List<RivenFileOption> SelectedFiles { get; set; } = [];
 }
 
 public sealed class RivenContainers

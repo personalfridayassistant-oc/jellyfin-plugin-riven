@@ -20,7 +20,7 @@
         style.textContent = `
             .rivenActionMenu { position: relative; display: inline-flex; margin-inline-end: .5em; }
             .rivenMenuButton { width: 3.2em; height: 3.2em; min-width: 3.2em; border-radius: 50%; padding: 0; font-weight: 700; }
-            .rivenMenuPanel { position: absolute; top: 100%; left: 0; z-index: 1300; min-width: 16rem; margin-top: .4rem; padding: .35rem 0; border-radius: .25rem; background: var(--theme-primary-color, #202020); box-shadow: 0 0 .9rem rgba(0,0,0,.45); display: none; }
+            .rivenMenuPanel { position: fixed; z-index: 1300; width: min(18rem, calc(100vw - 1rem)); max-height: calc(100vh - 1rem); overflow: auto; padding: .35rem 0; border-radius: .25rem; background: var(--theme-primary-color, #202020); box-shadow: 0 0 .9rem rgba(0,0,0,.45); display: none; }
             .rivenActionMenu-open .rivenMenuPanel { display: block; }
             .rivenMenuItem { width: 100%; display: flex; align-items: center; gap: .8rem; padding: .8rem 1rem; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; font: inherit; }
             .rivenMenuItem:hover, .rivenMenuItem:focus { background: rgba(255,255,255,.08); outline: 0; }
@@ -142,7 +142,7 @@
 
     function getFiles(payload) {
         const containers = payload.containers || payload.Containers || {};
-        return containers.files || containers.Files || [];
+        return containers.files || containers.Files || payload.files || payload.Files || payload.selected_files || payload.SelectedFiles || [];
     }
 
     function getSessionId(payload) {
@@ -156,8 +156,15 @@
     function showStreamPicker(itemId, payload) {
         const sessionId = getSessionId(payload);
         const files = getFiles(payload);
-        if (!sessionId || !files.length) {
-            notify('Riven did not return any selectable streams.');
+        if (!sessionId) {
+            notify('Riven did not return a manual session.');
+            return;
+        }
+
+        if (!files.length) {
+            apiFetch('/Riven/CompleteSession', { sessionId: sessionId }).then(function (result) {
+                notify(result.Message || result.message || 'Riven manual session completed.');
+            }).catch(function (error) { notify(error.message); });
             return;
         }
 
@@ -198,6 +205,31 @@
         });
 
         document.body.appendChild(overlay);
+    }
+
+    function positionMenu(menu) {
+        const trigger = menu.querySelector('.rivenMenuButton');
+        const panel = menu.querySelector('.rivenMenuPanel');
+        if (!trigger || !panel) {
+            return;
+        }
+
+        panel.style.visibility = 'hidden';
+        panel.style.display = 'block';
+        const triggerRect = trigger.getBoundingClientRect();
+        const panelRect = panel.getBoundingClientRect();
+        const margin = 8;
+        const left = Math.min(Math.max(triggerRect.left, margin), window.innerWidth - panelRect.width - margin);
+        let top = triggerRect.bottom + margin;
+        if (top + panelRect.height > window.innerHeight - margin) {
+            top = Math.max(margin, triggerRect.top - panelRect.height - margin);
+        }
+
+        panel.style.left = left + 'px';
+        panel.style.top = top + 'px';
+        panel.style.maxHeight = Math.max(160, window.innerHeight - top - margin) + 'px';
+        panel.style.visibility = '';
+        panel.style.display = '';
     }
 
     function addMenuItem(menu, label, title, iconPath, onClick) {
@@ -244,6 +276,9 @@
         trigger.addEventListener('click', function (event) {
             event.stopPropagation();
             menu.classList.toggle('rivenActionMenu-open');
+            if (menu.classList.contains('rivenActionMenu-open')) {
+                positionMenu(menu);
+            }
         });
 
         addMenuItem(menu, 'Retry with override', 'Retry scrape in Riven', icons.retry, function () {

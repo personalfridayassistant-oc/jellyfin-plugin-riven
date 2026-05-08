@@ -112,9 +112,9 @@ public sealed class RivenController : ControllerBase
         return await ExecuteResolvedActionAsync(request.ItemId, async item =>
         {
             var result = await _rivenClient.StartMagnetSessionAsync(item.Id, request.Magnet, "movie", cancellationToken).ConfigureAwait(false);
-            if (result.SessionId is null || (result.Containers?.Files.Count ?? 0) == 0)
+            if (string.IsNullOrWhiteSpace(result.SessionId))
             {
-                throw new InvalidOperationException("Riven did not return any available streams for the provided magnet link.");
+                throw new InvalidOperationException("Riven did not return a valid manual session for the provided magnet link.");
             }
 
             return result;
@@ -135,13 +135,38 @@ public sealed class RivenController : ControllerBase
         {
             var result = await _rivenClient.StartMagnetSessionAsync(item.Id, request.Magnet, "tv", cancellationToken).ConfigureAwait(false);
 
-            if (result.SessionId is null || (result.Containers?.Files.Count ?? 0) == 0)
+            if (string.IsNullOrWhiteSpace(result.SessionId))
             {
-                throw new InvalidOperationException("Riven did not return any available streams for the provided magnet link.");
+                throw new InvalidOperationException("Riven did not return a valid manual session for the provided magnet link.");
             }
 
             return result;
         }, cancellationToken).ConfigureAwait(false);
+    }
+
+    [HttpPost("CompleteSession")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public async Task<ActionResult<RivenActionResponse>> CompleteSession([FromBody] CompleteSessionRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.SessionId))
+        {
+            return BadRequest(new RivenActionResponse { Success = false, Message = "Session ID is required." });
+        }
+
+        try
+        {
+            var message = await _rivenClient.CompleteSessionAsync(request.SessionId, cancellationToken).ConfigureAwait(false);
+            if (Plugin.Instance?.Configuration.RefreshLibraryOnComplete == true)
+            {
+                await TriggerLibraryRefreshAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            return Ok(new RivenActionResponse { Success = true, Message = message, RivenItemId = request.SessionId });
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or JsonException)
+        {
+            return BadRequest(new RivenActionResponse { Success = false, Message = ex.Message });
+        }
     }
 
     [HttpPost("SelectStream")]
@@ -282,4 +307,9 @@ public sealed class SelectStreamRequest
     public string? Filename { get; set; }
     public long Filesize { get; set; }
     public Guid ItemId { get; set; }
+}
+
+public sealed class CompleteSessionRequest
+{
+    public string SessionId { get; set; } = string.Empty;
 }
