@@ -4,8 +4,16 @@
     const supportedTypes = new Set(['Movie', 'Episode', 'Season', 'Series']);
 
     function getItemId() {
-        const params = new URLSearchParams(window.location.hash.split('?')[1] || window.location.search);
-        return params.get('id');
+        const hash = window.location.hash || '';
+        const query = hash.includes('?') ? hash.slice(hash.indexOf('?')) : window.location.search;
+        const params = new URLSearchParams(query);
+        const id = params.get('id');
+        if (id) {
+            return id;
+        }
+
+        const match = hash.match(/details\/([a-f0-9-]+)/i) || window.location.pathname.match(/details\/([a-f0-9-]+)/i);
+        return match ? match[1] : null;
     }
 
     function apiFetch(path, body) {
@@ -52,7 +60,10 @@
         return document.querySelector('.detailPagePrimaryContainer .mainDetailButtons')
             || document.querySelector('.itemDetailPage .mainDetailButtons')
             || document.querySelector('.detailButtons')
-            || document.querySelector('.detailPagePrimaryContainer');
+            || document.querySelector('.detailPagePrimaryContainer')
+            || document.querySelector('.itemDetailPage .detailPageContent')
+            || document.querySelector('.itemDetailPage')
+            || document.body;
     }
 
     function makeButton(label, title, onClick) {
@@ -83,6 +94,8 @@
         bar.style.gap = '.35em';
         bar.style.alignItems = 'center';
         bar.style.marginTop = '.5em';
+        bar.style.flexWrap = 'wrap';
+        bar.style.width = '100%';
 
         bar.appendChild(makeButton('Retry Riven', 'Retry scrape in Riven', function () {
             apiFetch('/Riven/Retry', { itemId: itemId }).then(function (payload) {
@@ -115,6 +128,14 @@
             }));
         }
 
+        if (host === document.body) {
+            bar.style.position = 'fixed';
+            bar.style.right = '1.5rem';
+            bar.style.bottom = '1.5rem';
+            bar.style.zIndex = '1300';
+            bar.style.width = 'auto';
+        }
+
         host.appendChild(bar);
     }
 
@@ -124,9 +145,11 @@
             return;
         }
 
-        ApiClient.getCurrentUserId().then(function (userId) {
-            return ApiClient.getItem(userId, itemId);
-        }).then(addActions).catch(function () { });
+        const itemPromise = ApiClient.getCurrentUserId
+            ? ApiClient.getCurrentUserId().then(function (userId) { return ApiClient.getItem(userId, itemId); })
+            : ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('Items/' + itemId) });
+
+        itemPromise.then(addActions).catch(function () { });
     }
 
     let lastHref = '';
@@ -138,5 +161,6 @@
     }, 800);
 
     document.addEventListener('viewshow', function () { setTimeout(refresh, 600); });
+    document.addEventListener('pageshow', function () { setTimeout(refresh, 600); });
     setTimeout(refresh, 1000);
 }());

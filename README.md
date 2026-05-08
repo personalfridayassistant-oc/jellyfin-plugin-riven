@@ -10,11 +10,11 @@ Jellyfin plugin that exposes Riven actions from Jellyfin item pages.
 - Submit a manual magnet link for movies using Riven's manual scrape session flow.
 - Serve a compact Jellyfin Web action script that adds native-looking buttons to supported item detail pages.
 
-## Current UI Integration Note
+## UI Integration
 
-Jellyfin server plugins can provide configuration pages and API endpoints, but Jellyfin does not currently provide a stable official server-plugin API for injecting controls into every Jellyfin Web item details page. This plugin therefore serves `/Riven/Web/riven.js`; load that script with a Jellyfin web customization or JavaScript injector plugin to add the buttons to item pages.
+The plugin injects `/Riven/Web/riven.js` into Jellyfin Web's `index.html` response through ASP.NET Core middleware. After installing or updating the plugin, restart Jellyfin and hard-refresh Jellyfin Web. No separate JavaScript injector plugin is required.
 
-The server-side plugin remains useful without the script because the actions are available through authenticated Jellyfin endpoints:
+The server-side actions are also available through authenticated Jellyfin endpoints:
 
 - `POST /Riven/Retry`
 - `POST /Riven/DeleteAndRetry`
