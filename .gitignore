@@ -1,0 +1,9 @@
+bin/
+obj/
+*.user
+*.suo
+*.nupkg
+*.snupkg
+*.zip
+.vs/
+.idea/

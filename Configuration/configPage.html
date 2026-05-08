@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Riven</title>
+</head>
+<body>
+    <div id="RivenConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+        <div data-role="content">
+            <div class="content-primary">
+                <form id="RivenConfigForm">
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="RivenHost">Riven API Host</label>
+                        <input id="RivenHost" type="text" is="emby-input" autocomplete="off" />
+                        <div class="fieldDescription">Hostname or IP only, for example <code>192.168.1.158</code>.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="RivenPort">Riven API Port</label>
+                        <input id="RivenPort" type="number" is="emby-input" min="1" max="65535" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="RivenApiKey">Riven API Key</label>
+                        <input id="RivenApiKey" type="password" is="emby-input" autocomplete="new-password" />
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="RivenUseHttps" type="checkbox" is="emby-checkbox" />
+                            <span>Use HTTPS</span>
+                        </label>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="RivenEnableWebActions" type="checkbox" is="emby-checkbox" />
+                            <span>Serve web action script</span>
+                        </label>
+                        <div class="fieldDescription">Jellyfin plugins cannot officially inject controls into every item page. Enable this and load <code>/Riven/Web/riven.js</code> with a web customisation or JavaScript injector plugin to add compact Riven actions to item pages.</div>
+                    </div>
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                            <span>Save</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script type="text/javascript">
+            var RivenConfig = {
+                pluginUniqueId: '8b5c30ef-2a34-4e61-9a19-d87a8dbd684f'
+            };
+
+            document.querySelector('#RivenConfigPage').addEventListener('pageshow', function () {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(RivenConfig.pluginUniqueId).then(function (config) {
+                    document.querySelector('#RivenHost').value = config.Host || '';
+                    document.querySelector('#RivenPort').value = config.Port || 8080;
+                    document.querySelector('#RivenApiKey').value = config.ApiKey || '';
+                    document.querySelector('#RivenUseHttps').checked = config.UseHttps || false;
+                    document.querySelector('#RivenEnableWebActions').checked = config.EnableWebActions !== false;
+                    Dashboard.hideLoadingMsg();
+                });
+            });
+
+            document.querySelector('#RivenConfigForm').addEventListener('submit', function (e) {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(RivenConfig.pluginUniqueId).then(function (config) {
+                    config.Host = document.querySelector('#RivenHost').value.trim();
+                    config.Port = parseInt(document.querySelector('#RivenPort').value, 10) || 8080;
+                    config.ApiKey = document.querySelector('#RivenApiKey').value.trim();
+                    config.UseHttps = document.querySelector('#RivenUseHttps').checked;
+                    config.EnableWebActions = document.querySelector('#RivenEnableWebActions').checked;
+                    ApiClient.updatePluginConfiguration(RivenConfig.pluginUniqueId, config).then(function (result) {
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                    });
+                });
+
+                e.preventDefault();
+                return false;
+            });
+        </script>
+    </div>
+</body>
+</html>
