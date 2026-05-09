@@ -60,6 +60,9 @@ public sealed class RivenItem
     [JsonPropertyName("tmdb_id")]
     public string? TmdbId { get; set; }
 
+    [JsonPropertyName("parent_ids")]
+    public RivenProviderIds? ParentIds { get; set; }
+
     [JsonPropertyName("state")]
     public string? State { get; set; }
 
@@ -68,6 +71,18 @@ public sealed class RivenItem
 
     [JsonPropertyName("filesystem_entry")]
     public RivenFileSystemEntry? FilesystemEntry { get; set; }
+}
+
+public sealed class RivenProviderIds
+{
+    [JsonPropertyName("imdb_id")]
+    public string? ImdbId { get; set; }
+
+    [JsonPropertyName("tvdb_id")]
+    public string? TvdbId { get; set; }
+
+    [JsonPropertyName("tmdb_id")]
+    public string? TmdbId { get; set; }
 }
 
 public sealed class RivenMediaMetadata

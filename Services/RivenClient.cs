@@ -89,7 +89,7 @@ public sealed class RivenClient
         return await ReadRivenMessageAsync(response, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<string> DeleteAndRetryAsync(string rivenItemId, string? qualityOverride, string? profileOverride, CancellationToken cancellationToken)
+    public async Task<string> DeleteAndReAddAsync(RivenItem item, string mediaType, CancellationToken cancellationToken)
     {
         var config = GetConfig();
         EnsureConfigured(config);
@@ -97,14 +97,46 @@ public sealed class RivenClient
         var removeUri = BuildUri(config, "/api/v1/items/remove", new Dictionary<string, string?> { ["api_key"] = config.ApiKey });
         var removeRequest = new HttpRequestMessage(HttpMethod.Delete, removeUri)
         {
-            Content = JsonContent.Create(new { ids = new[] { rivenItemId } }, options: JsonOptions)
+            Content = JsonContent.Create(new { ids = new[] { item.Id } }, options: JsonOptions)
         };
 
         using var removeResponse = await _httpClient.SendAsync(removeRequest, cancellationToken).ConfigureAwait(false);
         var removeMessage = await ReadRivenMessageAsync(removeResponse, cancellationToken).ConfigureAwait(false);
 
-        var retryMessage = await RetryAsync(rivenItemId, qualityOverride, profileOverride, cancellationToken).ConfigureAwait(false);
-        return $"{removeMessage}; {retryMessage}";
+        var addMessage = await AddAsync(item, mediaType, cancellationToken).ConfigureAwait(false);
+        return $"{removeMessage}; {addMessage}";
+    }
+
+    public async Task<string> AddAsync(RivenItem item, string mediaType, CancellationToken cancellationToken)
+    {
+        var config = GetConfig();
+        EnsureConfigured(config);
+
+        var tmdbId = item.TmdbId ?? item.ParentIds?.TmdbId;
+        var tvdbId = item.TvdbId ?? item.ParentIds?.TvdbId;
+        if (string.IsNullOrWhiteSpace(tmdbId) && string.IsNullOrWhiteSpace(tvdbId))
+        {
+            throw new InvalidOperationException("Riven re-add requires a TMDB or TVDB id, but this item does not have one.");
+        }
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["media_type"] = mediaType
+        };
+
+        if (!string.IsNullOrWhiteSpace(tmdbId))
+        {
+            payload["tmdb_ids"] = new[] { tmdbId };
+        }
+
+        if (!string.IsNullOrWhiteSpace(tvdbId))
+        {
+            payload["tvdb_ids"] = new[] { tvdbId };
+        }
+
+        var addUri = BuildUri(config, "/api/v1/items/add", new Dictionary<string, string?> { ["api_key"] = config.ApiKey });
+        using var addResponse = await _httpClient.PostAsJsonAsync(addUri, payload, JsonOptions, cancellationToken).ConfigureAwait(false);
+        return await ReadRivenMessageAsync(addResponse, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<string> SubmitMovieMagnetAsync(string rivenItemId, string magnet, CancellationToken cancellationToken)

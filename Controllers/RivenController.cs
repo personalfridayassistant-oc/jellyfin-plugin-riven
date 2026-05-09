@@ -72,23 +72,22 @@ public sealed class RivenController : ControllerBase
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    [HttpPost("DeleteAndRetry")]
+    [HttpPost("DeleteAndReAdd")]
     [Authorize(Policy = Policies.RequiresElevation)]
-    public async Task<ActionResult<RivenActionResponse>> DeleteAndRetry([FromBody] RivenItemActionRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<RivenActionResponse>> DeleteAndReAdd([FromBody] RivenItemActionRequest request, CancellationToken cancellationToken)
     {
         var jellyfinItem = _libraryManager.GetItemById(request.ItemId);
-        if (jellyfinItem is not Movie && jellyfinItem is not Episode)
+        if (jellyfinItem is not Movie && jellyfinItem is not Series)
         {
-            return BadRequest(new RivenActionResponse { Success = false, Message = "Delete and retry is only available for movies and individual episodes." });
+            return BadRequest(new RivenActionResponse { Success = false, Message = "Delete and re-add is only available for movies and main series pages." });
         }
 
         return await ExecuteResolvedActionAsync(request.ItemId, async item =>
         {
             var config = Plugin.Instance?.Configuration;
-            var qualityOverride = request.QualityOverride ?? config?.DefaultQualityOverride;
-            var profileOverride = request.ProfileOverride ?? config?.DefaultProfileOverride;
+            var mediaType = jellyfinItem is Movie ? "movie" : "tv";
 
-            var message = await _rivenClient.DeleteAndRetryAsync(item.Id, qualityOverride, profileOverride, cancellationToken).ConfigureAwait(false);
+            var message = await _rivenClient.DeleteAndReAddAsync(item, mediaType, cancellationToken).ConfigureAwait(false);
 
             if (config?.RefreshLibraryOnComplete == true)
             {
@@ -97,6 +96,13 @@ public sealed class RivenController : ControllerBase
 
             return new RivenActionResponse { Success = true, Message = message, RivenItemId = item.Id };
         }, cancellationToken).ConfigureAwait(false);
+    }
+
+    [HttpPost("DeleteAndRetry")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public Task<ActionResult<RivenActionResponse>> DeleteAndRetry([FromBody] RivenItemActionRequest request, CancellationToken cancellationToken)
+    {
+        return DeleteAndReAdd(request, cancellationToken);
     }
 
     [HttpPost("SubmitMagnet")]

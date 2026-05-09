@@ -288,15 +288,14 @@
             }).catch(function (error) { notify(error.message); });
         });
 
-        if (item.Type === 'Movie' || item.Type === 'Episode') {
-            addMenuItem(menu, 'Delete + retry', 'Delete from Riven and retry scrape', icons.remove, function () {
-                if (!window.confirm('Delete this item in Riven and immediately retry the scrape?')) {
+        if (item.Type === 'Movie' || item.Type === 'Series') {
+            addMenuItem(menu, 'Delete + re-add', 'Delete from Riven and re-add so it can scrape again', icons.remove, function () {
+                if (!window.confirm('Delete this item in Riven and re-add it so Riven scrapes it again?')) {
                     return;
                 }
 
-                const overrides = promptRetryOptions();
-                apiFetch('/Riven/DeleteAndRetry', Object.assign({ itemId: itemId }, overrides)).then(function (payload) {
-                    notify(payload.Message || payload.message || 'Riven delete and retry started.');
+                apiFetch('/Riven/DeleteAndReAdd', { itemId: itemId }).then(function (payload) {
+                    notify(payload.Message || payload.message || 'Riven delete and re-add started.');
                 }).catch(function (error) { notify(error.message); });
             });
         }

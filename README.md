@@ -6,8 +6,8 @@ Jellyfin plugin that exposes Riven actions from Jellyfin item pages.
 
 - Store Riven host, port, HTTPS setting, and API key in Jellyfin plugin settings.
 - Retry Riven scraping for movies, episodes, seasons, and shows.
-- Delete and immediately retry movies or individual episodes so Riven can reacquire the item.
-- Submit a manual magnet link for movies using Riven's manual scrape session flow.
+- Delete and re-add movies or main series items so Riven can scrape them again.
+- Submit a manual magnet link for movies and main series items using Riven's manual scrape session flow.
 - Serve a compact Jellyfin Web action script that adds native-looking buttons to supported item detail pages.
 
 ## UI Integration
@@ -17,8 +17,9 @@ The plugin injects `/Riven/Web/riven.js` into Jellyfin Web's `index.html` respon
 The server-side actions are also available through authenticated Jellyfin endpoints:
 
 - `POST /Riven/Retry`
-- `POST /Riven/DeleteAndRetry`
+- `POST /Riven/DeleteAndReAdd`
 - `POST /Riven/SubmitMagnet`
+- `POST /Riven/SubmitTvMagnet`
 
 ## Build
 
@@ -60,21 +61,16 @@ For TV content, season and episode numbers are also matched to prevent retrying 
 
 ## Manual Magnet Flow
 
-Movie magnet submission mirrors the flow tested against Riven:
+Magnet submission mirrors the flow tested against Riven:
 
-1. Start manual scrape session with `item_id`, `media_type=movie`, and `magnet`.
-2. Select the first returned file.
+1. Start manual scrape session with `item_id`, `media_type`, and `magnet`.
+2. Let the user select a returned file when Riven provides choices.
 3. Submit file attributes.
-4. Complete the session.
-
-TV magnet submission is intentionally left for a follow-up because Riven requires explicit season/episode file mapping for shows.
+4. Complete the session, or auto-complete when Riven already selected the file.
 
 ## Future Options
 
-- TV manual magnet mapping UI for season packs and single-episode torrents.
 - Blacklist current stream, then retry, to avoid reacquiring the same bad release.
 - Show Riven state, scrape count, selected filename, and failed reason directly in Jellyfin.
 - Bulk retry failed or unreleased-but-aired items from a plugin dashboard page.
-- Quality/profile override controls before retrying a scrape.
-- Manual stream picker using Riven's scrape results before starting download.
 - Background sync task to refresh Jellyfin library after Riven completes a reacquire.
