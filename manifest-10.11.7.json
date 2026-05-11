@@ -8,11 +8,11 @@
     "category": "General",
     "versions": [
       {
-        "version": "0.1.7.0",
-        "changelog": "Replace delete-and-retry with delete-and-re-add for movies and main series pages.",
+        "version": "0.1.8.0",
+        "changelog": "Route season retries through Riven's season scrape endpoint.",
         "targetAbi": "10.11.7.0",
-        "sourceUrl": "https://github.com/personalfridayassistant-oc/jellyfin-plugin-riven/releases/download/v0.1.7.0/Jellyfin.Plugin.Riven_0.1.7.0.zip",
-        "checksum": "EA9B2D11620581D6B7BA8E00E77C05FA",
+        "sourceUrl": "https://github.com/personalfridayassistant-oc/jellyfin-plugin-riven/releases/download/v0.1.8.0/Jellyfin.Plugin.Riven_0.1.8.0.zip",
+        "checksum": "3F8102393CED6C5C517FFDCC4E8730CB",
         "timestamp": "2026-05-08T00:00:00Z"
       }
     ]
