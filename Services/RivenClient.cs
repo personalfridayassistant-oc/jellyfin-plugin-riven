@@ -89,6 +89,47 @@ public sealed class RivenClient
         return await ReadRivenMessageAsync(response, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<string> ScrapeSeasonAsync(RivenLookup lookup, CancellationToken cancellationToken)
+    {
+        var config = GetConfig();
+        EnsureConfigured(config);
+        if (!lookup.SeasonNumber.HasValue)
+        {
+            throw new InvalidOperationException("A season number is required to scrape a season.");
+        }
+
+        if (string.IsNullOrWhiteSpace(lookup.TvdbId)
+            && string.IsNullOrWhiteSpace(lookup.TmdbId)
+            && string.IsNullOrWhiteSpace(lookup.ImdbId))
+        {
+            throw new InvalidOperationException("A TVDB, TMDB, or IMDb id is required to scrape a season.");
+        }
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["season_numbers"] = new[] { lookup.SeasonNumber.Value }
+        };
+
+        if (!string.IsNullOrWhiteSpace(lookup.TvdbId))
+        {
+            payload["tvdb_id"] = lookup.TvdbId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(lookup.TmdbId))
+        {
+            payload["tmdb_id"] = lookup.TmdbId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(lookup.ImdbId))
+        {
+            payload["imdb_id"] = lookup.ImdbId;
+        }
+
+        var uri = BuildUri(config, "/api/v1/scrape/seasons", new Dictionary<string, string?> { ["api_key"] = config.ApiKey });
+        using var response = await _httpClient.PostAsJsonAsync(uri, payload, JsonOptions, cancellationToken).ConfigureAwait(false);
+        return await ReadRivenMessageAsync(response, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<string> DeleteAndReAddAsync(RivenItem item, string mediaType, CancellationToken cancellationToken)
     {
         var config = GetConfig();

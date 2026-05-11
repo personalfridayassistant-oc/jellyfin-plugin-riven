@@ -55,6 +55,27 @@ public sealed class RivenController : ControllerBase
     [Authorize(Policy = Policies.RequiresElevation)]
     public async Task<ActionResult<RivenActionResponse>> Retry([FromBody] RivenItemActionRequest request, CancellationToken cancellationToken)
     {
+        var jellyfinItem = _libraryManager.GetItemById(request.ItemId);
+        if (jellyfinItem is Season)
+        {
+            try
+            {
+                var lookup = BuildLookup(request.ItemId);
+                var message = await _rivenClient.ScrapeSeasonAsync(lookup, cancellationToken).ConfigureAwait(false);
+
+                if (Plugin.Instance?.Configuration.RefreshLibraryOnComplete == true)
+                {
+                    await TriggerLibraryRefreshAsync(cancellationToken).ConfigureAwait(false);
+                }
+
+                return Ok(new RivenActionResponse { Success = true, Message = message });
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or JsonException)
+            {
+                return BadRequest(new RivenActionResponse { Success = false, Message = ex.Message });
+            }
+        }
+
         return await ExecuteResolvedActionAsync(request.ItemId, async item =>
         {
             var config = Plugin.Instance?.Configuration;

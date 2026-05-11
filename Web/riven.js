@@ -281,10 +281,10 @@
             }
         });
 
-        addMenuItem(menu, 'Retry with override', 'Retry scrape in Riven', icons.retry, function () {
-            const overrides = promptRetryOptions();
+        addMenuItem(menu, item.Type === 'Season' ? 'Scrape season' : 'Retry with override', 'Retry scrape in Riven', icons.retry, function () {
+            const overrides = item.Type === 'Season' ? {} : promptRetryOptions();
             apiFetch('/Riven/Retry', Object.assign({ itemId: itemId }, overrides)).then(function (payload) {
-                notify(payload.Message || payload.message || 'Riven retry started.');
+                notify(payload.Message || payload.message || (item.Type === 'Season' ? 'Riven season scrape started.' : 'Riven retry started.'));
             }).catch(function (error) { notify(error.message); });
         });
 
